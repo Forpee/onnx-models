@@ -2,40 +2,41 @@ import onnx
 from onnx import helper, TensorProto, numpy_helper
 import numpy as np
 
-# Model input: shape [1, 4]
+# Define input/output tensor types
 input_tensor = helper.make_tensor_value_info('input', TensorProto.FLOAT, [1, 4])
 output_tensor = helper.make_tensor_value_info('output', TensorProto.FLOAT, [1, 4])
 
-# Weights and biases for two Gemm layers
-W1 = np.eye(4).astype(np.float32) * 0.5     # Shape [4, 4]
-B1 = np.zeros(4, dtype=np.float32)          # Shape [4]
-W2 = np.eye(4).astype(np.float32) * 1.5
-B2 = np.ones(4, dtype=np.float32)
+# Create weights and biases as initializers (constants in the model)
+W1 = np.eye(4, dtype=np.float32) * 0.5
+B1 = np.zeros((4,), dtype=np.float32)
+W2 = np.eye(4, dtype=np.float32) * 1.5
+B2 = np.ones((4,), dtype=np.float32)
 
-W1_tensor = numpy_helper.from_array(W1, name='W1')
-B1_tensor = numpy_helper.from_array(B1, name='B1')
-W2_tensor = numpy_helper.from_array(W2, name='W2')
-B2_tensor = numpy_helper.from_array(B2, name='B2')
+W1_init = numpy_helper.from_array(W1, name='W1')
+B1_init = numpy_helper.from_array(B1, name='B1')
+W2_init = numpy_helper.from_array(W2, name='W2')
+B2_init = numpy_helper.from_array(B2, name='B2')
 
-# Nodes
-gemm1 = helper.make_node('Gemm', inputs=['input', 'W1', 'B1'], outputs=['gemm1_out'])
-relu1 = helper.make_node('Relu', inputs=['gemm1_out'], outputs=['relu1_out'])
-
-gemm2 = helper.make_node('Gemm', inputs=['relu1_out', 'W2', 'B2'], outputs=['gemm2_out'])
-relu2 = helper.make_node('Relu', inputs=['gemm2_out'], outputs=['output'])
+# Define nodes
+nodes = [
+    helper.make_node('Gemm', ['input', 'W1', 'B1'], ['x1'], name='Gemm1'),
+    helper.make_node('Relu', ['x1'], ['x2'], name='ReLU1'),
+    helper.make_node('Gemm', ['x2', 'W2', 'B2'], ['x3'], name='Gemm2'),
+    helper.make_node('Relu', ['x3'], ['output'], name='ReLU2'),
+]
 
 # Create the graph
-graph = helper.make_graph(
-    [gemm1, relu1, gemm2, relu2],
-    'GemmReluTwice',
-    [input_tensor],
-    [output_tensor],
-    initializer=[W1_tensor, B1_tensor, W2_tensor, B2_tensor]
+graph_def = helper.make_graph(
+    nodes=nodes,
+    name='GemmReluTwice',
+    inputs=[input_tensor],
+    outputs=[output_tensor],
+    initializer=[W1_init, B1_init, W2_init, B2_init],
 )
 
 # Create the model
-model = helper.make_model(graph, producer_name='onnx-gemm-relu-chain')
-onnx.checker.check_model(model)
+model_def = helper.make_model(graph_def, producer_name='onnx-gemm-relu-chain')
+onnx.checker.check_model(model_def)
 
-# Save the model
-onnx.save(model, 'gemm_relu.onnx')
+# Save it
+onnx.save(model_def, 'gemm_relu.onnx')
